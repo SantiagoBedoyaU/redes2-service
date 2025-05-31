@@ -5,12 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"net/http"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/mongo/readpref"
 )
 
 var (
@@ -29,6 +30,9 @@ func init() {
 	var err error
 	client, err = mongo.Connect(ctx, options.Client().ApplyURI(dbURI))
 	if err != nil {
+		panic(err)
+	}
+	if err := client.Ping(ctx, readpref.Primary()); err != nil {
 		panic(err)
 	}
 	fmt.Println("Database successfully connected")
@@ -65,24 +69,24 @@ func getConnectionsByIP(ip string) uint {
 	return record.Connections
 }
 
-func handler(w http.ResponseWriter, r *http.Request) {
-	ip := r.RemoteAddr
+func handler(ctx *gin.Context) {
+	ip := ctx.RemoteIP()
 	if realIP, _, err := net.SplitHostPort(ip); err == nil {
 		ip = realIP
 	}
 
-	if ipHeader := r.Header.Get("X-Forwarded-For"); ipHeader != "" {
+	if ipHeader := ctx.GetHeader("X-Forwarded-For"); ipHeader != "" {
 		ip = ipHeader
 	}
 	visitas := getConnectionsByIP(ip)
-	fmt.Fprintf(w, "Hola, me visitas desde la IP: %s y me has visitado %d veces", ip, visitas)
+	fmt.Fprintf(ctx.Writer, "Hola, me visitas desde la IP: %s y me has visitado %d veces", ip, visitas)
 }
 
 func main() {
-	http.HandleFunc("/", handler)
+	router := gin.Default()
+	router.GET("/", handler)
 	fmt.Println("Service started at port 8080")
-	err := http.ListenAndServe("0.0.0.0:8080", nil)
-	if err != nil {
+	if err := router.Run("0.0.0.0:8080"); err != nil {
 		panic(err)
 	}
 }
